@@ -88,5 +88,87 @@
 
           TSNET_HOSTNAME = "paste-devel";
         };
-      }) // {};
+
+    }) // {
+      nixosModules.default = {
+        pkgs,
+        lib,
+        config,
+        ...
+      }: let
+        cfg = config.services.tclip;
+      in {
+        options = with lib; {
+          services.tclip = {
+            enable = mkEnableOption "Enable tclip service";
+
+            package = mkOption {
+              type = types.package;
+              description = ''
+                tclip package to use
+              '';
+              default = pkgs.web;
+            };
+
+            dataDir = mkOption {
+              type = types.path;
+              default = "/var/lib/tclip";
+              description = "Path to data dir";
+            };
+
+            user = mkOption {
+              type = types.str;
+              default = "tclip";
+              description = "User account under which tclip runs.";
+            };
+
+            group = mkOption {
+              type = types.str;
+              default = "tclip";
+              description = "Group account under which tclip runs.";
+            };
+
+            tailscaleAuthKeyFile = mkOption {
+              type = types.path;
+              description = "Path to file containing the Tailscale Auth Key";
+            };
+
+            verbose = mkOption {
+              type = types.bool;
+              default = false;
+            };
+          };
+        };
+        config = lib.mkIf cfg.enable {
+          users.users."${cfg.user}" = {
+            home = cfg.dataDir;
+            createHome = true;
+            group = "${cfg.group}";
+            isSystemUser = true;
+            isNormalUser = false;
+            description = "User for tclip service";
+          };
+          users.groups."${cfg.group}" = {};
+
+          systemd.services.tclip = {
+            enable = true;
+            script = ''
+              ${lib.optionalString (cfg.tailscaleAuthKeyFile != null) ''
+                export TS_AUTHKEY="$(head -n1 ${lib.escapeShellArg cfg.tailscaleAuthKeyFile})"
+              ''}
+              ${cfg.package}/bin/web ${builtins.concatStringsSep " " lib.optionals cfg.verbose ["--tsnet-verbose"]};
+            '';
+            wantedBy = ["multi-user.target"];
+            after = ["network-online.target"];
+            serviceConfig = {
+              User = cfg.user;
+              Group = cfg.group;
+              Restart = "always";
+              RestartSec = "15";
+              WorkingDirectory = "${cfg.dataDir}";
+            };
+          };
+        };
+      };
+    };
 }
