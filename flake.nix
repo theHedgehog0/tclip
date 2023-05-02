@@ -104,6 +104,7 @@
         , ...
         }:
         let
+          system = pkgs.system;
           cfg = config.services.tclip;
         in
         {
